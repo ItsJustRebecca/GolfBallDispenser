@@ -1,0 +1,130 @@
+#include <avr/io.h>
+#include <util/delay.h>
+#include <avr/interrupt.h>
+#include <avr/eeprom.h>
+#include <ctype.h>
+
+#define MAX 50
+#define S_CHECK    1			//defining each state
+#define S_EMPTY    2
+#define S_OFF      3
+#define S_ALERT    4
+#define S_SET      5
+#define S_WAIT     6
+#define S_DISPENSE 7
+
+int num_balls;								//number of balls that will be dispensed
+uint8_t count;								//will keep count of how many balls are in dispenser
+
+void empty_wait(){							//there should be a button that the golfer presses
+	int x;									//to indicate that the dispenser has been refilled
+	//implement timer for 3 minutes here
+	//if button was pressed
+	//count = MAX;
+	
+	return x = (count == MAX) ? 1 : 0;
+}
+
+void motor_spin(int num_balls){
+	PORTB |= (1<<PORTB0);			//assume motor is connected to B0
+	_delay_ms(7.5);					//spins 180 degrees? 
+	PORTB &= ~(1<<PORTB0);			//remove power from motor
+	count = count - num_balls;
+	eeprom_update_byte(( uint8_t *)46, count);
+}
+
+int main(void)
+{	
+	DDRB |= (1<<0);								//make (arbitrary) 0 pin as an output
+	DDRD &= ~(1<<7);							//make (arbitrary) 7 pin as an input
+	//set button for refilling dispenser as an input
+	//set buttons for number of balls dispensed as an input
+	
+	int state, next_state;
+    uint8_t init_power;							//keeps track of whether dispenser is being turned on for the first time
+	count = eeprom_read_byte(( uint8_t *)46);	//store in memory address 46
+	init_power = eeprom_read_byte(( uint8_t *)47);
+	
+	if(init_power == 0){						//if turned on for the first time
+		count = MAX;							//dispenser is full
+		init_power = 1;							
+	}
+	eeprom_update_byte(( uint8_t *)46, count);			//store value from count in memory address 46
+	eeprom_update_byte(( uint8_t *)47, init_power);		//store init_power value
+	state = 1;
+    
+	while (1) 
+    {
+		//state 1: check if machine is empty
+		if(state == S_CHECK){
+			if(count == 0){
+				next_state = S_EMPTY;
+			}
+			else if(count <= (MAX/10)){
+				next_state = S_ALERT;
+			}
+			else{
+				next_state = S_SET;
+			}
+		}
+		//state 2: empty, wait 3 minutes
+		if(state == S_EMPTY){
+			int x = empty_wait();
+			if(x){
+				next_state = S_SET;
+			}
+			else{
+				next_state = S_OFF;
+			} 
+		}
+		//state 3: still empty, turn off
+		if(state == S_OFF){
+			//do something to turn power off
+			
+		}
+		//state 4: low count, alert golfer
+		if(state == S_ALERT){
+			PORTD |= (1<<PORTD7);					//assume there is an LED connected to D7
+			next_state = S_SET;
+		}
+		//state 5: set amount of balls to be dispensed
+		if(state == S_SET){
+			//if button 1 pressed, num_ball = 1;
+			//if button 2 pressed, num_ball = 2;
+			//if button 3 pressed, num_ball = 3;
+			next_state = S_WAIT;
+		}
+		//state 6: wait for golfer to activate proximity sensor
+		if(state == S_WAIT){
+			//if button for ball count is pressed, go back to S_SET
+			//else if proximity sensor is activated, go to S_DISPENSE
+			//else stay in S_WAIT
+		}
+		//state 7: dispense balls
+		if(state == S_DISPENSE){
+			motor_spin(num_balls);
+			next_state = S_CHECK;
+		}
+		state = next_state;
+		
+		//implement code for LED battery life here (probably don't need for prototype)
+    }
+}
+
+//motor code from video
+/*int main(){
+	pwm.period_ms(20);
+	while(1){
+		pwm.pulsewidth_us(1500);
+		wait(0.5);
+		pwm.pulsewidth_us(900);
+		wait(0.5);
+		pwm.pulsewidth_us(500);
+		wait(0.5);
+		pwm.pulsewidth_us(2100);
+		wait(0.5);
+		pwm.pulsewidth_us(2500);
+		wait(0.1);
+	}
+}
+*/
