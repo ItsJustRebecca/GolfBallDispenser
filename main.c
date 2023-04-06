@@ -4,7 +4,7 @@
 #include <avr/eeprom.h>
 #include <ctype.h>
 
-#define MAX 50
+#define MAX 50					//arbitrary max of balls that can fit in dispenser
 #define S_CHECK    1			//defining each state
 #define S_EMPTY    2
 #define S_OFF      3
@@ -13,7 +13,7 @@
 #define S_WAIT     6
 #define S_DISPENSE 7
 
-int num_balls;								//number of balls that will be dispensed
+int num_balls = 1;							//number of balls that will be dispensed
 uint8_t count;								//will keep count of how many balls are in dispenser
 
 void empty_wait(){							//there should be a button that the golfer presses
@@ -26,9 +26,12 @@ void empty_wait(){							//there should be a button that the golfer presses
 }
 
 void motor_spin(int num_balls){
-	PORTB |= (1<<PORTB0);			//assume motor is connected to B0
-	_delay_ms(7.5);					//spins 180 degrees? 
-	PORTB &= ~(1<<PORTB0);			//remove power from motor
+	for(int i = 0; i < num_balls; i++){
+		PORTB |= (1<<PORTB0);			//assume motor is connected to B0
+		_delay_ms(7.5);					//spins 180 degrees? 
+		PORTB &= ~(1<<PORTB0);			//remove power from motor
+		_delay_ms(5);					//pause for a small amount of time between each ball being dispensed
+	}
 	count = count - num_balls;
 	eeprom_update_byte(( uint8_t *)46, count);
 }
