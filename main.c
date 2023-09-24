@@ -1,3 +1,12 @@
+/*
+ * SeniorDesign.c
+ *
+ * Created: 3/20/2023 6:25:55 PM
+ * Author : rebecca
+ */ 
+
+#define F_CPU 16000000UL //clock rate
+#define BAUD 9600 //define baud
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
@@ -12,25 +21,42 @@
 #define S_SET      5
 #define S_WAIT     6
 #define S_DISPENSE 7
+#define TOP 500 // 1000*(64/16000000)
 
 int num_balls = 1;							//number of balls that will be dispensed
 uint8_t count;								//will keep count of how many balls are in dispenser
 
-void empty_wait(){							//there should be a button that the golfer presses
-	int x;									//to indicate that the dispenser has been refilled
+//Sam's code
+void pwm_init() {
+	DDRD |= (1<<6);     //Fast PWM output at OC0A pin -> D6
+	OCR0A = 255;	    // Duty cycle of 100% -> update this value with desired pwm value
+	TCCR0A |= (1<<COM0A1) | (1<<WGM01) | (1<<WGM00);	//Non-Inverting Fast PWM mode 3 using OCRA unit
+	TCCR0B |= (1<<CS00);	//No-Prescalar
+}
+
+int empty_wait(){							//there should be a button that the golfer presses
+	//int x;									//to indicate that the dispenser has been refilled
 	//implement timer for 3 minutes here
 	//if button was pressed
 	//count = MAX;
 	
-	return x = (count == MAX) ? 1 : 0;
+	return (count == MAX) ? 1 : 0;
 }
 
 void motor_spin(int num_balls){
-	for(int i = 0; i < num_balls; i++){
-		PORTB |= (1<<PORTB0);			//assume motor is connected to B0
-		_delay_ms(7.5);					//spins 180 degrees? 
-		PORTB &= ~(1<<PORTB0);			//remove power from motor
-		_delay_ms(5);					//pause for a small amount of time between each ball being dispensed
+	//for(int i = 0; i < num_balls; i++){
+		//PORTD |= (1<<PORTD6);			//assume motor is connected to D6
+		//_delay_ms(7.5);					//spins 180 degrees? 
+		//PORTD &= ~(1<<PORTD6);			//remove power from motor
+		//_delay_ms(5);					//pause for a small amount of time between each ball being dispensed
+	//}
+	//Jeremy's code
+	for(int i = 100; i < TOP; i++){
+		OCR0A = i;
+		_delay_ms(1500);
+		if(OCR0A == 300){
+			PORTD &= ~(1<<5);
+		}
 	}
 	count = count - num_balls;
 	eeprom_update_byte(( uint8_t *)46, count);
@@ -38,8 +64,11 @@ void motor_spin(int num_balls){
 
 int main(void)
 {	
-	DDRB |= (1<<0);								//make (arbitrary) 0 pin as an output
-	DDRD &= ~(1<<7);							//make (arbitrary) 7 pin as an input
+	pwm_init();     //initialize pwm pins and setup
+	DDRD |= (1<<6);								//make pin 6 as motor output
+	DDRD &= ~(1<<4|1<<5);						//make pin 4 button input and pin 5 sensor input
+	//button already has pull up resistor
+	DDRD |= (1<<7);								//make (arbitrary) 7 pin as an output
 	//set button for refilling dispenser as an input
 	//set buttons for number of balls dispensed as an input
 	
@@ -93,15 +122,21 @@ int main(void)
 		//state 5: set amount of balls to be dispensed
 		if(state == S_SET){
 			//if button 1 pressed, num_ball = 1;
+			//next_state = S_SET;
+			while(!(PIND & (1<<4))){
+				num_balls = 1;
+				next_state = S_WAIT;	
+			}
 			//if button 2 pressed, num_ball = 2;
 			//if button 3 pressed, num_ball = 3;
-			next_state = S_WAIT;
 		}
 		//state 6: wait for golfer to activate proximity sensor
 		if(state == S_WAIT){
 			//if button for ball count is pressed, go back to S_SET
 			//else if proximity sensor is activated, go to S_DISPENSE
+			while(!(PIND & (1<<5))){}		//keep busy wait while sensor is low
 			//else stay in S_WAIT
+			next_state = S_DISPENSE;
 		}
 		//state 7: dispense balls
 		if(state == S_DISPENSE){
