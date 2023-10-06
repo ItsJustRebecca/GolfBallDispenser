@@ -25,31 +25,46 @@
 int num_balls = 1;				//number of balls that will be dispensed
 uint8_t count;					//will keep count of how many balls are in dispenser
 
+/*Motor 1    -> D5
+  Motor 2    -> D3
+  Sensor 1   -> B0
+  Sensor 2   -> B4
+  Button 1   -> B1
+  Button 2   -> B2
+  Button 3   -> B3
+  Button 4   -> D4
+  RED pin    -> D2
+  ORANGE pin -> D7*/
+
 //Sam's pwm functions
 void init() {
-	DDRD |= (1 << 6);				// Motor 1 output
-	DDRD |= (1 << 5);				// Motor 2 output
-	DDRB |= (1<<5);					// led output
-	DDRB &= ~(1<<0|1<<3|1<<2|1<<1);	// sensor input on B0, button inputs at B3, B2, B1
-	PORTB |= (1<<3|1<<2|1<<1);      // pull up resistor
-	//Need to include input for 4th button
-	PORTB &= ~(1<<5);				// LED off
+	DDRD |= (1 << 5);						// Motor 1 output
+	DDRD |= (1 << 3);						// Motor 2 output
+	DDRB |= (1<<5);							// led output
+	PORTB &= ~(1<<5);						// LED off
+	DDRB &= ~(1<<0|1<<4);					// sensor input on B0 and B4
+	DDRB &= ~(1<<1|1<<2|1<<3);				// button inputs at B1, B2, B3
+	PORTB |= (1<<1|1<<2|1<<3);				// pull up resistor
+	DDRD &= ~(1<<4);						// dump all button on D4
+	PORTD |= (1<<4);						// pull up resistor
+	DDRD |= (1<<2|1<<3);					// LED strip signals to arduino
+	PORTD &= ~(1<<2|1<<3);
 }
 
 void servo_min() {				// Start motors 0 degrees
-	PORTD |= (1 << 6);			// Turn on Motor 1
-	PORTD |= (1 << 5);			// Turn on Motor 2
+	PORTD |= (1 << 5);			// Turn on Motor 1
+	PORTD |= (1 << 3);			// Turn on Motor 2
 	_delay_us(MIN_PULSE_WIDTH);	// set to 0 degrees
-	PORTD &= ~(1 << 6);			// Turn off motor 1
-	PORTD &= ~(1 << 5);			// Turn off motor 2
+	PORTD &= ~(1 << 5);			// Turn off motor 1
+	PORTD &= ~(1 << 3);			// Turn off motor 2
 }
 
 void servo_max() {
-	PORTD |= (1 << 6);			// Turn on Motor 1
-	PORTD |= (1 << 5);			// Turn on Motor 2
+	PORTD |= (1 << 5);			// Turn on Motor 1
+	PORTD |= (1 << 3);			// Turn on Motor 2
 	_delay_us(MAX_PULSE_WIDTH);	// set to 180 degrees
-	PORTD &= ~(1 << 6);			// Turn off motor 1
-	PORTD &= ~(1 << 5);			// Turn off motor 2
+	PORTD &= ~(1 << 5);			// Turn off motor 1
+	PORTD &= ~(1 << 3);			// Turn off motor 2
 }
 
 int main(void)
@@ -71,34 +86,45 @@ int main(void)
     
 	while (1) 
     {
+		while(!(PIND & (1<<4))){
+			//call function to turn on motors and allow
+			//dispenser to be emptied out
+			count = 0;
+			next_state = S_CHECK;
+			//maybe add another eeprom update here
+		}
+			
 		//state 1: check if machine is empty
 		if(state == S_CHECK){
 			if(count == 0){
 				next_state = S_EMPTY;
 			}
-			else if(count <= (MAX/10)){			//arbitrary "low count" number
+			else if(count <= (MAX/10)){					//arbitrary "low count" number
 				next_state = S_ALERT;
 			}
 			else{
-				//LED strip set to green
+				PORTD &= ~(1<<2);						//red and orange off
+				PORTD &= ~(1<<3);
 				next_state = S_SIGNAL;
 			}
+			eeprom_update_byte(( uint8_t *)46, count);	//store value in memory
 		}
 		
 		//state 2: empty, wait 3 minutes
 		if(state == S_EMPTY){
-			//LED strip turns red
-			while(/*not refilled*/){
-				next_state = S_EMPTY;
+			PORTD &= ~(1<<2);
+			PORTD |= (1<<3);		//LED strip is RED
+			while(PIND & (1<<4)){	
+				//busy wait while sensor isn't activated
 			}
+			count = MAX;
 			next_state = S_CHECK;
 		}
 		
 		//state 3: low count, alert golfer
 		if(state == S_ALERT){
-			//Set LED strip to orange here
-			//maybe could make the orange progress slowly to red
-			//so this state is a little more useful
+			PORTD &= ~(1<<3);		
+			PORTD |= (1<<2);		//LED strip is ORANGE
 			next_state = S_SIGNAL;
 		}
 		
@@ -106,7 +132,7 @@ int main(void)
 		if(state == S_SIGNAL){
 			next_state = S_SIGNAL;					//stay in this state until button and sensor have been activated
 			//if button 1 pressed, num_ball = 1;
-			while(!(PINB & (1<<3))){				//button on pin B3
+			while(!(PINB & (1<<1))){				//button pressed on pin B1
 				num_balls = 1;	
 			}
 			//if button 2 pressed, num_ball = 2;
@@ -114,7 +140,7 @@ int main(void)
 				num_balls = 2;
 			}
 			//if button 3 pressed, num_ball = 3;
-			while(!(PINB & (1<<1))){				//button on pin B1
+			while(!(PINB & (1<<3))){				//button on pin B3
 				num_balls = 3;
 			}
 			while(!(PINB & (1<<0))){			   //sensor at B0 activated
