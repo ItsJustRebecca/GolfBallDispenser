@@ -1,29 +1,30 @@
-/*
- * SeniorDesign.c
- *
- * Created: 3/20/2023 6:25:55 PM
- * Author : rebecca
- */ 
+// SeniorDesign.c
 
 #define F_CPU 16000000UL //clock rate
 #define BAUD 9600 //define baud
+
 #include <avr/io.h>
 #include <util/delay.h>
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 #include <ctype.h>
 
-#define MAX 50					//arbitrary max of balls that can fit in dispenser
+#define MAX 20					//arbitrary max of balls that can fit in dispenser
 #define S_CHECK    1			//defining each state
 #define S_EMPTY    2
 #define S_ALERT    3
 #define S_SIGNAL   4
 #define S_DISPENSE 5
+
+// motor related definitions
 #define MIN_PULSE_WIDTH 500		// Minimum pulse width in us for the servo
 #define MAX_PULSE_WIDTH 2400	// Maximum pulse width in us for the servo
+#define SERVO_FREQ 50							// motors operate at 50Hz
+#define SERVO_PERIOD (1000000UL / SERVO_FREQ)	// servo period in us
+#define TIMER_TOP ((F_CPU / 256) / SERVO_FREQ) // Timer0 TOP value for Fast PWM
 
-int num_balls = 1;				//number of balls that will be dispensed
-uint8_t count;					//will keep count of how many balls are in dispenser
+// int num_balls = 1;				//number of balls that will be dispensed
+int8_t count;					//will keep count of how many balls are in dispenser
 
 /*Motor 1    -> D5
   Motor 2    -> D3
@@ -36,7 +37,53 @@ uint8_t count;					//will keep count of how many balls are in dispenser
   RED pin    -> D2
   ORANGE pin -> D7*/
 
-//Sam's pwm functions
+void delay_ms(int ms)
+{
+	for(int i = 0; i < ms; i++)
+	{
+		_delay_ms(1);
+	}
+}
+
+void servo_min(int motor) {
+	if (motor == 1) {
+		OCR0B = MIN_PULSE_WIDTH * TIMER_TOP / SERVO_PERIOD; // rotate back to 0 degrees (D5)
+	}
+	else if (motor == 2) {
+		OCR2B = MIN_PULSE_WIDTH * TIMER_TOP / SERVO_PERIOD; // rotate back to 0 degrees (D3)
+	}
+}
+
+void servo_max(int motor) {
+	if (motor == 1) {
+		OCR0B = MAX_PULSE_WIDTH * TIMER_TOP / SERVO_PERIOD; // rotate 180 degrees (D5)
+	}
+	else if (motor == 2) {
+		OCR2B = MAX_PULSE_WIDTH * TIMER_TOP / SERVO_PERIOD; // rotate 180 degrees (D3)
+	}
+}
+
+void init_motors() {
+	servo_min(1);
+	servo_min(2);
+}
+
+
+void init_timers() {
+	// set up timer0 for motor at pin D5
+	TCCR0A |= (1<<WGM01)|(1<<WGM00);	// Fast PWM (mode 3)
+	TCCR0B |= (1<<CS02);				// Prescaler of 256
+	TCCR0A |= (1<<COM0B1);				// clear OC0B on compare match
+	
+	// set up timer2 for motor at pin D3
+	TCCR2A |= (1<<WGM21)|(1<<WGM20);	// Fast PWM (mode 3)
+	TCCR2B |= (1<<CS22)|(1<<CS21);		// Prescaler of 256
+	TCCR2A |= (1<<COM2B1);				// clear OC2B on compare match when up-counting
+	
+	// start both motors at 0 degrees
+	init_motors();
+}
+
 void init() {
 	DDRD |= (1 << 5);						// Motor 1 output
 	DDRD |= (1 << 3);						// Motor 2 output
@@ -47,31 +94,22 @@ void init() {
 	PORTB |= (1<<1|1<<2|1<<3);				// pull up resistor
 	DDRD &= ~(1<<4);						// dump all button on D4
 	PORTD |= (1<<4);						// pull up resistor
-	DDRD |= (1<<2|1<<3);					// LED strip signals to arduino
-	PORTD &= ~(1<<2|1<<3);
+	DDRD |= (1<<2|1<<7);					// LED strip signals to arduino
+	PORTD &= ~(1<<2|1<<7);					// start 
+
+	init_timers();
 }
 
-void servo_min() {				// Start motors 0 degrees
-	PORTD |= (1 << 5);			// Turn on Motor 1
-	PORTD |= (1 << 3);			// Turn on Motor 2
-	_delay_us(MIN_PULSE_WIDTH);	// set to 0 degrees
-	PORTD &= ~(1 << 5);			// Turn off motor 1
-	PORTD &= ~(1 << 3);			// Turn off motor 2
-}
-
-void servo_max() {
-	PORTD |= (1 << 5);			// Turn on Motor 1
-	PORTD |= (1 << 3);			// Turn on Motor 2
-	_delay_us(MAX_PULSE_WIDTH);	// set to 180 degrees
-	PORTD &= ~(1 << 5);			// Turn off motor 1
-	PORTD &= ~(1 << 3);			// Turn off motor 2
-}
 
 int main(void)
 {	
 	init();     //initialize pwm pins and setup
 	
 	int state, next_state;
+	count = MAX;
+	int num_balls = 0;
+	int delay = 0;
+	int ready = 0;
     uint8_t init_power;									//keeps track of whether dispenser is being turned on for the first time
 	count = eeprom_read_byte(( uint8_t *)46);			//store in memory address 46
 	init_power = eeprom_read_byte(( uint8_t *)47);
@@ -87,24 +125,27 @@ int main(void)
 	while (1) 
     {
 		while(!(PIND & (1<<4))){
-			//call function to turn on motors and allow
-			//dispenser to be emptied out
+			servo_max(1);
+			servo_max(2);
+			_delay_ms(10000);
+			servo_min(1);
+			servo_min(2);
 			count = 0;
-			next_state = S_CHECK;
-			//maybe add another eeprom update here
+			state = S_CHECK;
+			eeprom_update_byte(( uint8_t *)46, count);			//store value from count in memory address 46
 		}
 			
 		//state 1: check if machine is empty
 		if(state == S_CHECK){
-			if(count == 0){
+			if(count <= 0){
 				next_state = S_EMPTY;
 			}
-			else if(count <= (MAX/10)){					//arbitrary "low count" number
+			else if(count <= (MAX/2)){					//arbitrary "low count" number
 				next_state = S_ALERT;
 			}
 			else{
 				PORTD &= ~(1<<2);						//red and orange off
-				PORTD &= ~(1<<3);
+				PORTD &= ~(1<<7);
 				next_state = S_SIGNAL;
 			}
 			eeprom_update_byte(( uint8_t *)46, count);	//store value in memory
@@ -112,19 +153,19 @@ int main(void)
 		
 		//state 2: empty, wait 3 minutes
 		if(state == S_EMPTY){
-			PORTD &= ~(1<<2);
-			PORTD |= (1<<3);		//LED strip is RED
-			while(PIND & (1<<4)){	
-				//busy wait while sensor isn't activated
+			next_state = S_EMPTY;
+			PORTD &= ~(1<<7);
+			PORTD |= (1<<2);		//LED strip is RED
+			while(!(PINB & (1<<4))){	
+				count = MAX;
+				next_state = S_CHECK;
 			}
-			count = MAX;
-			next_state = S_CHECK;
 		}
 		
 		//state 3: low count, alert golfer
 		if(state == S_ALERT){
-			PORTD &= ~(1<<3);		
-			PORTD |= (1<<2);		//LED strip is ORANGE
+			PORTD &= ~(1<<2);		
+			PORTD |= (1<<7);		//LED strip is ORANGE
 			next_state = S_SIGNAL;
 		}
 		
@@ -133,16 +174,21 @@ int main(void)
 			next_state = S_SIGNAL;					//stay in this state until button and sensor have been activated
 			//if button 1 pressed, num_ball = 1;
 			while(!(PINB & (1<<1))){				//button pressed on pin B1
-				num_balls = 1;	
+				num_balls = 1;
+	
+				ready = 1;	
 			}
 			//if button 2 pressed, num_ball = 2;
 			while(!(PINB & (1<<2))){				//button on pin B2
 				num_balls = 2;
+				ready = 1;
 			}
 			//if button 3 pressed, num_ball = 3;
 			while(!(PINB & (1<<3))){				//button on pin B3
 				num_balls = 3;
+				ready = 1;
 			}
+			delay = 1000*num_balls;
 			while(!(PINB & (1<<0))){			   //sensor at B0 activated
 				next_state = S_DISPENSE;
 			}
@@ -150,13 +196,22 @@ int main(void)
 		
 		//state 5: dispense balls
 		if(state == S_DISPENSE){
-			for(int i = 0; i < num_balls; i++){			//dispense desired amount of golf balls
-				servo_min();
-				servo_max();
+			while (ready) {
+				servo_max(1);
+				delay_ms(delay);
+				servo_min(1);
+				_delay_ms(500);
+
+				servo_max(2);
+				delay_ms(delay);
+				servo_min(2);
+			
+				ready = 0;
+				count = count - num_balls;		//update internal counter
+				num_balls = 0;
 			}
-			count = count - num_balls;					//update internal counter
-			eeprom_update_byte(( uint8_t *)46, count);	//store value in memory
 			next_state = S_CHECK;
+			eeprom_update_byte(( uint8_t *)46, count);	//store value in memory
 		}
 		state = next_state;
     }
