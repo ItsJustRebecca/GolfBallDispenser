@@ -8,6 +8,7 @@
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 #include <ctype.h>
+#include <math.h>
 
 #define MAX 20					//arbitrary max of balls that can fit in dispenser
 #define S_CHECK    1			//defining each state
@@ -30,9 +31,9 @@ int8_t count;					//will keep count of how many balls are in dispenser
   Motor 2    -> D3
   Sensor 1   -> B0
   Sensor 2   -> B4
-  Button 1   -> B1
-  Button 2   -> B2
-  Button 3   -> B3
+  Button 1   -> B2
+  Button 2   -> B3			//i think???
+  Button 3   -> B1
   Button 4   -> D4
   RED pin    -> D2
   ORANGE pin -> D7*/
@@ -120,18 +121,19 @@ int main(void)
 	}
 	eeprom_update_byte(( uint8_t *)46, count);			//store value from count in memory address 46
 	eeprom_update_byte(( uint8_t *)47, init_power);		//store init_power value
-	state = 1;
+	state = S_CHECK;
     
 	while (1) 
     {
 		while(!(PIND & (1<<4))){
 			servo_max(1);
 			servo_max(2);
-			_delay_ms(10000);
+			delay_ms(400*count);							//dump all should be a variable based on # of balls left in dispenser
 			servo_min(1);
 			servo_min(2);
 			count = 0;
 			state = S_CHECK;
+			//next_state = S_CHECK;
 			eeprom_update_byte(( uint8_t *)46, count);			//store value from count in memory address 46
 		}
 			
@@ -140,7 +142,7 @@ int main(void)
 			if(count <= 0){
 				next_state = S_EMPTY;
 			}
-			else if(count <= (MAX/2)){					//arbitrary "low count" number
+			else if(count <= (MAX/4)){					//arbitrary "low count" number
 				next_state = S_ALERT;
 			}
 			else{
@@ -173,22 +175,23 @@ int main(void)
 		if(state == S_SIGNAL){
 			next_state = S_SIGNAL;					//stay in this state until button and sensor have been activated
 			//if button 1 pressed, num_ball = 1;
-			while(!(PINB & (1<<1))){				//button pressed on pin B1
+			while(!(PINB & (1<<2))){				//button pressed on pin B1
 				num_balls = 1;
-	
+				delay = 300;
 				ready = 1;	
 			}
 			//if button 2 pressed, num_ball = 2;
-			while(!(PINB & (1<<2))){				//button on pin B2
+			while(!(PINB & (1<<3))){				//button on pin B2
 				num_balls = 2;
+				delay = 545;
 				ready = 1;
 			}
 			//if button 3 pressed, num_ball = 3;
-			while(!(PINB & (1<<3))){				//button on pin B3
+			while(!(PINB & (1<<1))){				//button on pin B3
 				num_balls = 3;
+				delay = 1050;
 				ready = 1;
 			}
-			delay = 1000*num_balls;
 			while(!(PINB & (1<<0))){			   //sensor at B0 activated
 				next_state = S_DISPENSE;
 			}
@@ -200,18 +203,19 @@ int main(void)
 				servo_max(1);
 				delay_ms(delay);
 				servo_min(1);
-				_delay_ms(500);
+				_delay_ms(250);
 
 				servo_max(2);
 				delay_ms(delay);
 				servo_min(2);
 			
 				ready = 0;
-				count = count - num_balls;		//update internal counter
+				count = count - num_balls;					//update internal counter
 				num_balls = 0;
 			}
 			next_state = S_CHECK;
 			eeprom_update_byte(( uint8_t *)46, count);	//store value in memory
+			
 		}
 		state = next_state;
     }
