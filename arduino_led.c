@@ -10,7 +10,7 @@
 #define MAX_AMPS 500
 
 CRGB leds[NUM_LEDS];
-int G = 255;
+int G = 0;
 int R = 0;
 int B = 0;
 int redPin = 3;        
@@ -27,6 +27,14 @@ void setup() {
   FastLED.show();
   pinMode(redPin, INPUT_PULLUP);
   pinMode(orangePin, INPUT_PULLUP);
+  //new part
+  for(int i = 0; i < NUM_LEDS; i++){      //When starting up, LED strip will be blue
+    leds[i] = CRGB(0, 0, 255);
+    FastLED.show();
+    delay(100);
+    //leds[i] = CRGB(0, 0, 0);
+  }
+  //end of new part
   
 }
 
