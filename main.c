@@ -8,7 +8,6 @@
 #include <avr/interrupt.h>
 #include <avr/eeprom.h>
 #include <ctype.h>
-#include <math.h>
 
 #define MAX 20					//arbitrary max of balls that can fit in dispenser
 #define S_CHECK    1			//defining each state
@@ -128,7 +127,7 @@ int main(void)
 		while(!(PIND & (1<<4))){
 			servo_max(1);
 			servo_max(2);
-			delay_ms(400*count);							//dump all should be a variable based on # of balls left in dispenser
+			delay_ms(450*count);							//dump all should be a variable based on # of balls left in dispenser
 			servo_min(1);
 			servo_min(2);
 			count = 0;
@@ -177,21 +176,22 @@ int main(void)
 			//if button 1 pressed, num_ball = 1;
 			while(!(PINB & (1<<2))){				//button pressed on pin B1
 				num_balls = 1;
-				delay = 300;
+				delay = 200;
 				ready = 1;	
 			}
 			//if button 2 pressed, num_ball = 2;
 			while(!(PINB & (1<<3))){				//button on pin B2
 				num_balls = 2;
-				delay = 545;
+				delay = 420;
 				ready = 1;
 			}
 			//if button 3 pressed, num_ball = 3;
 			while(!(PINB & (1<<1))){				//button on pin B3
 				num_balls = 3;
-				delay = 1050;
+				delay = 650;
 				ready = 1;
 			}
+			
 			while(!(PINB & (1<<0))){			   //sensor at B0 activated
 				next_state = S_DISPENSE;
 			}
@@ -203,7 +203,14 @@ int main(void)
 				servo_max(1);
 				delay_ms(delay);
 				servo_min(1);
-				_delay_ms(250);
+				
+				if (num_balls == 3){
+					_delay_ms(150);
+					delay = 1300;
+				}
+				else{
+					_delay_ms(250);
+				}
 
 				servo_max(2);
 				delay_ms(delay);
